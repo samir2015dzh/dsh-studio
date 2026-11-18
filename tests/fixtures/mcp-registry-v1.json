@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "idleTimeoutMinutes": 5,
+  "toolDescriptionMaxLength": 150,
+  "servers": [
+    {
+      "name": "rea",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "rea-agents", "mcp"],
+      "env": { "REA_API_KEY": "fake-rea-key-0001", "REA_HOME": "C:/Users/fake/.rea" },
+      "cwd": "",
+      "notes": "来自 cordis.patch.yml（mcp-rea），原生已禁用",
+      "source": { "kind": "profile", "rowId": "mcp-rea", "patchPath": "C:/Users/fake/.dsh/cordis.patch.yml", "nativeDisabled": true },
+      "desiredNative": "disabled",
+      "toolFilter": { "mode": "allow", "names": ["frida_attach", "apk_unpack"] },
+      "toolCallTimeoutMs": 900000,
+      "tools": [{ "name": "frida_attach", "description": "attach" }, { "name": "apk_unpack", "description": "unpack" }],
+      "toolsCheckedAt": "2026-11-14T10:00:00.000Z"
+    },
+    {
+      "name": "metis-reverse",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "metis",
+      "args": ["mcp", "--transport", "stdio"],
+      "env": { "GHIDRA_INSTALL_DIR": "C:/fake/ghidra_11" },
+      "envPrefix": { "PATH": "C:/fake/ghidra_11/support;" },
+      "cwd": "",
+      "notes": "来自 cordis.patch.yml（mcp-metis），原生已禁用",
+      "source": { "kind": "profile", "rowId": "mcp-metis", "patchPath": "C:/Users/fake/.dsh/profiles/desktop/cordis.patch.yml", "nativeDisabled": true },
+      "desiredNative": "disabled",
+      "tools": [{ "name": "decompile_function", "description": "decompile" }],
+      "toolsCheckedAt": "2026-11-14T10:00:00.000Z"
+    },
+    {
+      "name": "memory-bank",
+      "tier": "eager",
+      "transport": "streamable-http",
+      "url": "https://memory-bank.fake.example/mcp",
+      "headers": { "Authorization": "Bearer fake-memory-bank-token-0002", "X-Bank": "default" },
+      "notes": "来自 bundle（mcp-memory-bank），原生已禁用",
+      "source": { "kind": "profile", "rowId": "mcp-memory-bank", "patchPath": "C:/Users/fake/.dsh/profiles/desktop/node_modules/fake-bundle/cordis.patch.yml", "nativeDisabled": true },
+      "desiredNative": "disabled",
+      "idleTimeout": 30,
+      "tools": [{ "name": "retain", "description": "store" }, { "name": "recall", "description": "search" }],
+      "toolsCheckedAt": "2026-11-14T10:00:00.000Z"
+    },
+    {
+      "name": "craft-anything",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["C:/Users/fake/.dsh/mcp/craft-anything/launcher.cjs"],
+      "env": {},
+      "cwd": "",
+      "notes": "GitHub Fanqi89/dsh-craft-anything@e5abcb2 的启动定义（inline launcher）",
+      "tools": [{ "name": "make_slides", "description": "slides" }],
+      "toolsCheckedAt": "2026-11-14T10:00:00.000Z"
+    },
+    {
+      "name": "docbase",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "uvx",
+      "args": ["docbase-mcp"],
+      "env": { "OPENAI_API_KEY": "sk-fake-docbase-0003" },
+      "cwd": "",
+      "notes": "",
+      "tools": [],
+      "x-local-tag": "未知键也要原样保留"
+    },
+    {
+      "name": "baimiao",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["mcp/local-mcp.mjs"],
+      "env": { "BAIMIAO_OCR_SECRET": "fake-ocr-secret-0004" },
+      "cwd": "C:/Users/fake/baimiao",
+      "notes": "本地工具箱：PDF/Office/图片/GIF/视频处理 + 云端 OCR",
+      "toolFilter": { "mode": "deny", "names": ["video_to_gif"] },
+      "tools": [{ "name": "pdf_merge", "description": "merge" }, { "name": "video_to_gif", "description": "gif" }],
+      "toolsCheckedAt": "2026-11-14T10:00:00.000Z"
+    },
+    {
+      "name": "web-research",
+      "tier": "on-demand",
+      "transport": "stdio",
+      "command": "node",
+      "args": ["C:/Users/fake/web-research-mcp/dist/index.js"],
+      "env": { "TAVILY_API_KEY": "tvly-fake-0005" },
+      "cwd": "",
+      "notes": "联网检索（Tavily）",
+      "tools": [{ "name": "search_web", "description": "search" }],
+      "toolsCheckedAt": "2026-11-15T03:00:00.000Z"
+    }
+  ]
+}

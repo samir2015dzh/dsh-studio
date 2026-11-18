@@ -1,0 +1,17 @@
+import { isDirty, confirmDiscard, UNSAVED_LEAVE } from "../lib/unsaved.js";
+let failed = 0;
+const ok = (c, m) => { if (!c) { failed++; console.error("FAIL", m); } else console.log("PASS", m); };
+const sel = { editable: true };
+ok(!isDirty(sel, "a", "a"), "内容没变不算脏");
+ok(isDirty(sel, "ab", "a"), "改过算脏");
+ok(!isDirty({ editable: false }, "ab", "a"), "只读技能不算脏");
+ok(!isDirty(null, "x", ""), "没打开技能不算脏");
+ok(isDirty(sel, "", "a"), "清空正文也算脏");
+ok(confirmDiscard(false, UNSAVED_LEAVE, () => false), "不脏时不问直接放行");
+let asked = "";
+ok(!confirmDiscard(true, UNSAVED_LEAVE, (m) => { asked = m; return false; }), "脏且选取消则留下");
+ok(asked === UNSAVED_LEAVE, "问的是离开文案");
+ok(confirmDiscard(true, UNSAVED_LEAVE, () => true), "脏且确认则离开");
+ok(confirmDiscard(true, UNSAVED_LEAVE, undefined), "没有 confirm 时放行");
+if (failed) process.exit(1);
+console.log("\nall passed");

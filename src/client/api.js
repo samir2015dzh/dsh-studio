@@ -1,0 +1,285 @@
+/** Error carrying the route's JSON error message. */
+var ApiError = class extends Error {
+	constructor(message, extra) {
+		super(message);
+		this.name = "SkillManagerApiError";
+		this.status = extra && extra.status;
+		this.code = extra && extra.code;
+		this.body = extra && extra.body;
+	}
+};
+/** Parse a JSON response or throw an ApiError. */
+async function readJson(response) {
+	let body;
+	try {
+		body = await response.json();
+	} catch {
+		throw new ApiError("HTTP " + response.status + ": invalid JSON response");
+	}
+	if (!response.ok) {
+		throw new ApiError(typeof body === "object" && body !== null && typeof body.error === "string" ? body.error : "HTTP " + response.status, {
+			status: response.status,
+			code: typeof body === "object" && body !== null && typeof body.code === "string" ? body.code : undefined,
+			body
+		});
+	}
+	return body;
+}
+/** Plain fetch helper with an error wrapper. */
+async function request(path, init) {
+	let response;
+	try {
+		response = await fetch(path, init);
+	} catch (error) {
+		throw new ApiError("网络请求失败：" + String(error instanceof Error ? error.message : error));
+	}
+	return readJson(response);
+}
+/** The skill-manager panel API. */
+var Api = class {
+	async list() {
+		return request("/api/dsh-studio/list");
+	}
+	async get(name) {
+		return request("/api/dsh-studio/skill?name=" + encodeURIComponent(name));
+	}
+	async save(name, content, opts) {
+		const body = { name, content };
+		if (opts && opts.expectedMtime !== undefined) body.expectedMtime = opts.expectedMtime;
+		if (opts && opts.overwrite === true) body.overwrite = true;
+		return request("/api/dsh-studio/skill", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body)
+		});
+	}
+	async setPolicy(name, patch) {
+		return request("/api/dsh-studio/policy", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(Object.assign({ name }, patch))
+		});
+	}
+	/** 回收站：列表 / 删除到回收站 / 恢复 / 永久删除。 */
+	async trashList() {
+		return request("/api/dsh-studio/trash");
+	}
+	async trashSkill(name, cwd) {
+		return request("/api/dsh-studio/trash", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name, cwd })
+		});
+	}
+	async restoreTrash(id, name) {
+		return request("/api/dsh-studio/restore", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id, name })
+		});
+	}
+	async purgeTrash(id, name) {
+		return request("/api/dsh-studio/purge", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id, name })
+		});
+	}
+	/** 配置快照：建 / 列 / 恢复 / 清理 / 导出导入。 */
+	async snapshotList() {
+		return request("/api/dsh-studio/snapshot");
+	}
+	async snapshotCreate(label) {
+		return request("/api/dsh-studio/snapshot", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ label })
+		});
+	}
+	async snapshotRestore(id, dryRun, pathMap) {
+		return request("/api/dsh-studio/snapshot/restore", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id, dryRun, pathMap })
+		});
+	}
+	async snapshotPrune(keep) {
+		return request("/api/dsh-studio/snapshot/prune", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ keep })
+		});
+	}
+	async syncConfig(patch) {
+		if (patch === undefined) return request("/api/dsh-studio/sync");
+		return request("/api/dsh-studio/sync", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(patch)
+		});
+	}
+	async syncPush(snapshotId, channel) {
+		return request("/api/dsh-studio/sync/push", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ snapshotId, channel })
+		});
+	}
+	async syncPull(channel, label) {
+		return request("/api/dsh-studio/sync/pull", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ channel, label })
+		});
+	}
+	async snapshotSchedule(patch) {
+		if (patch === undefined) return request("/api/dsh-studio/snapshot/schedule");
+		return request("/api/dsh-studio/snapshot/schedule", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(patch)
+		});
+	}
+	async snapshotDelete(id) {
+		return request("/api/dsh-studio/snapshot/delete", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ id })
+		});
+	}
+	async skillImport(source) {
+		return request("/api/dsh-studio/skill-import", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ source })
+		});
+	}
+	async skillExport(name, path) {
+		const body = { name };
+		if (path) body.path = path;
+		return request("/api/dsh-studio/skill-export", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body)
+		});
+	}
+	async snapshotTransfer(payload) {
+		return request("/api/dsh-studio/snapshot/transfer", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(payload)
+		});
+	}
+	async extractStatus() {
+		return request("/api/dsh-studio/extract-status");
+	}
+	async extractConfig(patch) {
+		return request("/api/dsh-studio/extract-config", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(patch)
+		});
+	}
+	async extractRun() {
+		return request("/api/dsh-studio/extract-run", { method: "POST" });
+	}
+	async extractCandidates() {
+		return request("/api/dsh-studio/extract-candidates");
+	}
+	async extractCandidate(id, patch) {
+		return request("/api/dsh-studio/extract-candidate", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(Object.assign({ id }, patch))
+		});
+	}
+	async extractAccept(ids) {
+		return request("/api/dsh-studio/extract-accept", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ ids })
+		});
+	}
+	async extractRecent() {
+		return request("/api/dsh-studio/extract-recent");
+	}
+	async extractReject(ids) {
+		return request("/api/dsh-studio/extract-reject", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ ids })
+		});
+	}
+	/** MCP 按需加载：注册表、档位、空闲阈值。 */
+	async mcpList() {
+		return request("/api/dsh-studio/mcp");
+	}
+	/** ：注册表损坏闸——所有者确认后解闸（坏文件仍留档）。 */
+	async mcpCorruptAck() {
+		return request("/api/dsh-studio/mcp/registry-corrupt", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ confirm: true })
+		});
+	}
+	async mcpUpsert(entry) {
+		return request("/api/dsh-studio/mcp", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(entry)
+		});
+	}
+	async mcpRemove(name) {
+		return request("/api/dsh-studio/mcp?name=" + encodeURIComponent(name), { method: "DELETE" });
+	}
+	async mcpReload(name) {
+		return request("/api/dsh-studio/mcp/reload", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name })
+		});
+	}
+	async mcpPrefetch(name) {
+		return request("/api/dsh-studio/mcp/prefetch", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name })
+		});
+	}
+	async mcpTools(name, mode, names) {
+		return request("/api/dsh-studio/mcp/tools", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name, mode, names })
+		});
+	}
+	async mcpTakeover(name) {
+		return request("/api/dsh-studio/mcp/takeover", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name })
+		});
+	}
+	async mcpSettings(patch) {
+		return request("/api/dsh-studio/mcp/settings", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(patch)
+		});
+	}
+	/** 凭据明文只走这条 loopback 路由按需取，列表里永远是掩码。 */
+	async mcpCredential(name, kind, key) {
+		return request("/api/dsh-studio/mcp/credential", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name, kind, key })
+		});
+	}
+	/** 上游版本检查：会联网查 npm registry / git ls-remote，只在用户点按钮时调。 */
+	async mcpUpdateCheck(name) {
+		const query = typeof name === "string" && name !== "" ? "?name=" + encodeURIComponent(name) : "";
+		return request("/api/dsh-studio/mcp/update-check" + query);
+	}
+};
+
+export { Api };

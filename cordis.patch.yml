@@ -1,0 +1,31 @@
+# dsh-studio bundle patch: inserts the plugin row into the profile roster.
+# Applied as a profile bundle layer (declared by the `dsh.bundle.patch`
+# manifest field in package.json). Activate with:
+#
+#   # local development (link)
+#   dsh plugin --profile web add link:/path/to/dsh-studio
+#   # after publishing to GitHub (repo tagged with the `dsh-plugin` topic)
+#   dsh plugin --profile web add github:samir2015dzh/dsh-studio
+- insert:
+    - id: skill-manager
+      name: dsh-studio
+      config:
+        announceToAgent: true   # 在系统提示中公告插件（工具 + 能力说明）
+        enabled: true           # 插件总开关
+        darwin:                 # 原 dsh-darwin-auto 插件的配置，已并入
+          enabled: true
+          sweepHours: 24        # 巡检间隔
+          staleDays: 14         # 超过这么多天没体检记录就进巡检清单
+          sweepLimit: 5
+          familyRefreshDays: 7  # families.json 过期多少天后用 LLM 重聚；0 关闭自动重聚
+        optimizer:              # 技能自动优化回路；其余字段见 lib/optimizer-config.js
+          enabled: false        # 自动轮次默认关（手动 skillmgr_optimize_run 不受影响）
+        mcp:
+          catalogEval:          # 目录评测巡检；其余字段见 lib/catalog-watch.js
+            enabled: false      # 自动巡检默认关（手动 mcp_catalog_eval {action:"run"} 不受影响）
+        governance:             # 技能库治理；其余字段见 lib/governance-config.js
+          enabled: false        # 闲时自动轮次默认关（手动 skillmgr_governance_run 不受影响；一切只出提案 / 报告）
+        distill:                # 蒸馏硬化；其余字段见 lib/distill-config.js
+          enabled: false        # 闲时批量过门默认关（草稿照常排队；手动 skillmgr_distill_run 不受影响；评估门没有开关）
+        studioBackup:           # studio 级备份包；其余字段见 lib/studio-backup-config.js
+          enabled: false        # 闲时自动打包默认关（手动 skillmgr_studio_backup {action:"export"} 不受影响；恢复永远手动）

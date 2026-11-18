@@ -1,0 +1,361 @@
+{
+ "note": "G5 目录选择场景集。candidates 是 7 个示例 server 的目录条目（虚构示例数据）；expect=null 是反例：这一轮不该调用任何 MCP。评测器是词面代理（lib/catalog-select.js），不是模型准确率。",
+ "candidates": [
+  {
+   "name": "rea",
+   "summary": "逆向工程智能体工具集（rea-agents，229 个工具）：APK / 二进制的动态分析、Frida 注入、抓包与调试会话",
+   "useWhen": [
+    "要动态调试或 hook 一个 App / 进程",
+    "要抓包、看运行时网络请求或内存",
+    "安卓 APK 脱壳、Frida 脚本注入"
+   ],
+   "avoidWhen": [
+    "只要静态反编译看伪代码（用 metis-reverse）",
+    "普通代码编写或本地脚本调试"
+   ],
+   "tools": [
+    "frida_attach",
+    "frida_script_run",
+    "apk_unpack",
+    "traffic_capture",
+    "process_list",
+    "memory_dump"
+   ]
+  },
+  {
+   "name": "metis-reverse",
+   "summary": "Ghidra 静态反编译服务：加载二进制，导出函数伪代码、交叉引用、字符串与符号表",
+   "useWhen": [
+    "要看某个函数的反编译伪代码",
+    "查二进制里的字符串、导入表、交叉引用",
+    "静态分析 so / exe / dll"
+   ],
+   "avoidWhen": [
+    "需要运行时 hook 或动态调试（用 rea）",
+    "分析的是源代码而不是二进制"
+   ],
+   "tools": [
+    "decompile_function",
+    "list_functions",
+    "xrefs_to",
+    "search_strings",
+    "list_imports",
+    "rename_symbol"
+   ]
+  },
+  {
+   "name": "memory-bank",
+   "summary": "长期记忆库（示例）：跨会话存取用户偏好、事实与经验（写入保存 / 检索回忆）",
+   "useWhen": [
+    "用户说「记住」「以后都这样」，需要跨会话保存",
+    "回忆以前会话里用户说过的偏好、决定、事实"
+   ],
+   "avoidWhen": [
+    "只在本轮对话里临时用一下的信息",
+    "查公开资料或网页（用 web-research）"
+   ],
+   "tools": [
+    "mem_save",
+    "mem_recall",
+    "mem_reflect",
+    "mem_list"
+   ]
+  },
+  {
+   "name": "craft-anything",
+   "summary": "成品制作工坊：按描述生成 PPT 演示文稿、Word 报告、海报、信息图与网页原型等交付物",
+   "useWhen": [
+    "要做一份 PPT / 幻灯片 / 演示文稿",
+    "要出 Word 报告、海报、信息图",
+    "做一个网页原型或落地页"
+   ],
+   "avoidWhen": [
+    "只是转换或压缩已有文件（用 baimiao）",
+    "只要一段文字回答，不要文件"
+   ],
+   "tools": [
+    "make_slides",
+    "make_report",
+    "make_poster",
+    "make_infographic",
+    "make_webpage"
+   ]
+  },
+  {
+   "name": "docbase",
+   "summary": "设备图纸与程序资料库（示例）：设备 PDF 图纸按位号检索（返回文件 + 页码 + 页面图），机床 / PLC 程序包解包版本化与日志全文检索，零件号查找",
+   "useWhen": [
+    "按位号（如 KA3、-QF1、SP161）查它在哪张电气图纸、第几页",
+    "查某台设备有哪些图纸、手册、程序包资料",
+    "在机床 / PLC 程序包或日志里搜报警号、程序段",
+    "按零件号找备件出现在哪些资料里"
+   ],
+   "avoidWhen": [
+    "头脑风暴、起名、发散点子（直接回答，不用 MCP）",
+    "画思维导图或做演示文稿（用 craft-anything）",
+    "查网上的公开资料或新闻（用 web-research）"
+   ],
+   "tools": [
+    "tag_search",
+    "ask",
+    "text_search",
+    "page_image",
+    "equipment_list",
+    "document_list",
+    "log_search",
+    "part_search",
+    "equipment_materials",
+    "archive_list"
+   ]
+  },
+  {
+   "name": "baimiao",
+   "summary": "本地文件工具箱：PDF / Office / 图片 / GIF / 视频的转换、合并、压缩、裁剪，以及云端 OCR 文字识别",
+   "useWhen": [
+    "PDF 合并、拆分、转 Word",
+    "图片压缩、裁剪、转格式，视频转 GIF",
+    "扫描件或截图里的文字要 OCR 识别"
+   ],
+   "avoidWhen": [
+    "从零生成一份新的演示文稿或报告（用 craft-anything）",
+    "纯文字处理不涉及文件"
+   ],
+   "tools": [
+    "pdf_merge",
+    "pdf_split",
+    "pdf_to_word",
+    "image_compress",
+    "image_convert",
+    "video_to_gif",
+    "ocr_recognize"
+   ]
+  },
+  {
+   "name": "web-research",
+   "summary": "联网检索与资料读取（示例）：多家搜索引擎（含中文与学术搜索）、网页正文读取、GitHub 仓库读取，并汇总来源",
+   "useWhen": [
+    "要查最新资讯、新闻、价格、版本号",
+    "要搜索网页资料并给出处，或核实一个公开事实",
+    "读取某个网页链接的正文",
+    "读 GitHub 仓库的 README、文件、issue 或提交"
+   ],
+   "avoidWhen": [
+    "回忆用户自己的偏好或以前说过的话（用 memory-bank）",
+    "不需要联网的常识与计算",
+    "查设备图纸、位号、程序包等内部维修资料（用 docbase）"
+   ],
+   "tools": [
+    "search_web",
+    "search_chinese",
+    "search_academic",
+    "search_multi",
+    "read_url",
+    "github_read_file",
+    "github_list_issues",
+    "github_search_code"
+   ]
+  }
+ ],
+ "scenarios": [
+  {
+   "id": "rea-1",
+   "query": "帮我用 Frida hook 一下这个 App 的登录函数，看看运行时传了什么参数",
+   "expect": "rea"
+  },
+  {
+   "id": "rea-2",
+   "query": "这个安卓 APK 加了壳，先脱壳再说",
+   "expect": "rea"
+  },
+  {
+   "id": "rea-3",
+   "query": "抓一下这个进程运行时发出去的网络请求",
+   "expect": "rea"
+  },
+  {
+   "id": "rea-4",
+   "query": "动态调试这个程序，dump 一下内存",
+   "expect": "rea"
+  },
+  {
+   "id": "metis-1",
+   "query": "反编译 libnative.so 里的 check_license 函数，给我伪代码",
+   "expect": "metis-reverse"
+  },
+  {
+   "id": "metis-2",
+   "query": "查一下这个 exe 的导入表和可疑字符串",
+   "expect": "metis-reverse"
+  },
+  {
+   "id": "metis-3",
+   "query": "看看哪些地方交叉引用了这个函数",
+   "expect": "metis-reverse"
+  },
+  {
+   "id": "metis-4",
+   "query": "静态分析一下这个 dll 有哪些函数",
+   "expect": "metis-reverse"
+  },
+  {
+   "id": "mem-1",
+   "query": "记住：我以后写周报都用表格格式",
+   "expect": "memory-bank"
+  },
+  {
+   "id": "mem-2",
+   "query": "我之前跟你说过我偏好哪个部署方案来着？回忆一下",
+   "expect": "memory-bank"
+  },
+  {
+   "id": "mem-3",
+   "query": "把这个决定存进长期记忆，跨会话都要用",
+   "expect": "memory-bank"
+  },
+  {
+   "id": "mem-4",
+   "query": "以前会话里我提过的那个服务器地址是什么",
+   "expect": "memory-bank"
+  },
+  {
+   "id": "craft-1",
+   "query": "做一份 10 页的产品发布 PPT",
+   "expect": "craft-anything"
+  },
+  {
+   "id": "craft-2",
+   "query": "帮我出一份 Word 版的季度报告",
+   "expect": "craft-anything"
+  },
+  {
+   "id": "craft-3",
+   "query": "设计一张活动海报",
+   "expect": "craft-anything"
+  },
+  {
+   "id": "craft-4",
+   "query": "做个落地页网页原型给客户看",
+   "expect": "craft-anything"
+  },
+  {
+   "id": "doc-1",
+   "query": "查一下位号 KA3 在哪张电气图纸、第几页",
+   "expect": "docbase"
+  },
+  {
+   "id": "doc-2",
+   "query": "这台设备都有哪些图纸和程序包资料",
+   "expect": "docbase"
+  },
+  {
+   "id": "doc-3",
+   "query": "在机床 PLC 程序包的日志里搜一下报警号 2051",
+   "expect": "docbase"
+  },
+  {
+   "id": "bai-1",
+   "query": "把这三个 PDF 合并成一个",
+   "expect": "baimiao"
+  },
+  {
+   "id": "bai-2",
+   "query": "这张截图里的文字帮我 OCR 识别出来",
+   "expect": "baimiao"
+  },
+  {
+   "id": "bai-3",
+   "query": "把这段视频转成 GIF",
+   "expect": "baimiao"
+  },
+  {
+   "id": "bai-4",
+   "query": "图片太大了，压缩一下再转成 webp 格式",
+   "expect": "baimiao"
+  },
+  {
+   "id": "web-1",
+   "query": "查一下 Node.js 最新的 LTS 版本号",
+   "expect": "web-research"
+  },
+  {
+   "id": "web-2",
+   "query": "搜索一下今天关于 DeepSeek 的新闻",
+   "expect": "web-research"
+  },
+  {
+   "id": "web-3",
+   "query": "帮我核实一下这个说法，网上有没有出处",
+   "expect": "web-research"
+  },
+  {
+   "id": "web-4",
+   "query": "查查这款显卡现在的价格",
+   "expect": "web-research"
+  },
+  {
+   "id": "web-5",
+   "query": "读一下这个网页链接的正文内容",
+   "expect": "web-research"
+  },
+  {
+   "id": "web-6",
+   "query": "看看这个 GitHub 仓库的 README 写了什么",
+   "expect": "web-research"
+  },
+  {
+   "id": "neg-1",
+   "query": "你好，今天心情不错",
+   "expect": null
+  },
+  {
+   "id": "neg-2",
+   "query": "123 乘以 456 等于多少",
+   "expect": null
+  },
+  {
+   "id": "neg-3",
+   "query": "把这段 JavaScript 改成 TypeScript",
+   "expect": null
+  },
+  {
+   "id": "neg-4",
+   "query": "解释一下什么是闭包",
+   "expect": null
+  },
+  {
+   "id": "neg-5",
+   "query": "帮我写一首关于秋天的短诗",
+   "expect": null
+  },
+  {
+   "id": "neg-6",
+   "query": "这个变量名就在本轮用一下，不用记住",
+   "expect": null
+  },
+  {
+   "id": "neg-7",
+   "query": "git rebase 和 merge 有什么区别",
+   "expect": null
+  },
+  {
+   "id": "neg-8",
+   "query": "帮我把这句话翻译成英文：明天见",
+   "expect": null
+  },
+  {
+   "id": "neg-9",
+   "query": "头脑风暴一下新品牌的名字",
+   "expect": null
+  },
+  {
+   "id": "neg-10",
+   "query": "画个思维导图梳理一下这个项目的模块",
+   "expect": null
+  },
+  {
+   "id": "neg-11",
+   "query": "给我发散几个营销活动的点子，找找灵感",
+   "expect": null
+  }
+ ]
+}

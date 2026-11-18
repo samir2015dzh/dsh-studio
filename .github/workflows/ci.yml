@@ -1,0 +1,83 @@
+name: CI
+
+# 只跑测试与发布前校验，不发布、不打 tag、不写任何仓库外的东西。
+# 测试全部在临时伪 HOME 里跑（见 tests/*.test.mjs 与 tests/fixtures/*-home.mjs），
+# 最后一步再确认 runner 的真实 HOME 下没有被写出 .dsh / .agents。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # 插件主要跑在 Windows 上；Linux 一起跑，防止只在一边绿
+        os: [windows-latest, ubuntu-latest]
+        # 对齐 package.json engines.node：^22.19.0 || >=24.0.0
+        node: ['22', '24']
+    steps:
+      # Windows runner 默认 core.autocrlf=true，会把仓库里的 LF 检出成 CRLF；保持与仓库一致
+      - name: Keep LF line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+        with:
+          # 部分测试用 `git show <旧提交>:lib/...` 取基线版做对拍，需要完整历史
+          fetch-depth: 0
+
+      # 不给 action-setup 写 version：版本由 package.json 的 packageManager 唯一指定，
+      # 两处都写会被它以「Multiple versions of pnpm specified」拒绝（fc70793 起两次 CI 红于此）。
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+
+      # tests/fixtures/extractor-digest-home.mjs 用真 zstd 造会话日志
+      - name: Ensure zstd (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command zstd -ErrorAction SilentlyContinue)) { choco install zstandard -y --no-progress }
+          zstd --version
+      - name: Ensure zstd (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          command -v zstd || (sudo apt-get update && sudo apt-get install -y zstd)
+          zstd --version
+
+      - name: Record real HOME state
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'),p=require('path'),h=require('os').homedir();console.log(JSON.stringify(['.dsh','.agents'].filter(d=>fs.existsSync(p.join(h,d)))))" > "$RUNNER_TEMP/home-before.json"
+          cat "$RUNNER_TEMP/home-before.json"
+
+      - name: npm test
+        run: npm test
+
+      - name: Release pre-check (no publish)
+        run: node scripts/release.mjs --check
+
+      - name: Real HOME untouched
+        shell: bash
+        run: |
+          node -e "const fs=require('fs'),p=require('path'),h=require('os').homedir();console.log(JSON.stringify(['.dsh','.agents'].filter(d=>fs.existsSync(p.join(h,d)))))" > "$RUNNER_TEMP/home-after.json"
+          cat "$RUNNER_TEMP/home-after.json"
+          diff "$RUNNER_TEMP/home-before.json" "$RUNNER_TEMP/home-after.json" || { echo "::error::tests created state under the real HOME"; exit 1; }

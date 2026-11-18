@@ -1,0 +1,28 @@
+node_modules/
+# check:host 按机器记录「上次在哪个宿主版本上验证通过」
+.host-verified.json
+*.tgz
+*.log
+.DS_Store
+.knowledge-base/
+.bak-*/
+*.bak-*
+.git.broken-*/
+# 本机一次性脚本：硬编码本机绝对路径与单次数据，不进仓库
+scripts/darwin-log.mjs
+scripts/darwin-round*.mjs
+scripts/fix-*.mjs
+# 一次性补丁脚本（改动已落进 lib/，脚本只作本地记录）
+_patch-*.mjs
+# 分类 dry-run 的完整清单：每次跑 scripts/classify-skills.mjs 都会重新生成
+_classify-preview.txt
+
+# 语法校验失败时的中间产物
+*.broken-*
+
+# 临时修补脚本的其它前缀
+_add-*.mjs
+_fix*.mjs
+
+# npm pack 剥离生命周期脚本时的 package.json 备份
+.package.json.pack-backup

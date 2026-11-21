@@ -40,7 +40,7 @@ const { OPTIMIZER_DEFAULTS, optimizerRoot, resolveOptimizerConfig, inIdleWindow 
 const { classifyChange } = await import(modUrl("lib/optimizer-classify.js"));
 const { BUILTIN_REDLINES, checkRedlines, effectiveRedlines } = await import(modUrl("lib/skill-redlines.js"));
 const { createHostModel, createBudget, callWithBudget, BudgetStop } = await import(modUrl("lib/optimizer-model.js"));
-const { gateVerdict } = await import(modUrl("lib/optimizer-eval.js"));
+const { gateVerdict, scoreSkill } = await import(modUrl("lib/optimizer-eval.js"));
 const { readVersionRecords, rollbackSkill } = await import(modUrl("lib/versions.js"));
 const { configureTelemetry } = await import(modUrl("lib/telemetry.js"));
 const { buildOptimizerTools, buildOptimizerRoutes, OPTIMIZER_API } = await import(modUrl("lib/optimizer-tools.js"));
@@ -673,4 +673,17 @@ test("[#15] darwin 无人值守提交：非最低档进待批不落地；最低�
 	const bad = await tool.execute({ skill: name, content: "" }, {});
 	assert.equal(bad.ok, false);
 	assert.match(bad.message, /未落地/);
+});
+
+
+test("[review B2] 无效评分不是零分基线，合法零和数字字符串仍兼容", async () => {
+	const evalSet = { cases: [{ id: "c1", scenario: "test", expect: "test", critical: true }] };
+	for (const value of [null, "", "  ", false, true, {}, [], undefined, 0, "0", "7"]) {
+		const model = { complete: async () => ({ text: JSON.stringify({ scores: [{ id: "c1", score: value }] }) }) };
+		const score = await scoreSkill({ model, budget: createBudget({ maxModelCalls: 1, maxTokens: 10000, maxDurationMs: 10000 }), name: "review", text: "test", evalSet, maxOutputTokens: 100 });
+		const valid = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
+		assert.equal(score.cases[0].score, valid ? Number(value) : null, JSON.stringify(value));
+		const candidate = { mean: 8, cases: [{ id: "c1", score: 8, critical: true }] };
+		assert.equal(gateVerdict(score, candidate, { minDelta: 0, criticalTolerance: 0 }).pass, valid);
+	}
 });

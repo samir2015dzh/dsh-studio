@@ -471,3 +471,22 @@ test("[A7] 一份坏会话日志不拖垮整轮提取：createdAt 读不懂退�
 	assert.equal(r.digests, 3, "三份会话都进了摘要");
 	assert.ok((await distill.listDrafts()).length > 0);
 });
+
+
+test("[review B4] 模型超量输出不能让截断后的冻结集失去关键门", async () => {
+	fresh({ sessions: { "sess-csv": CSV_SESSION } });
+	const base = fakeModel({ judge: (_label, c) => c.id === "c1" ? 5 : 8 });
+	const model = { complete: async (req) => req.purpose === "cases"
+		? { text: JSON.stringify({ cases: Array.from({ length: 5 }, (_, i) => ({ id: "c" + (i + 1), scenario: "按列去重 " + i, expect: "保存并报告", critical: i === 4 })) }) }
+		: base.complete(req) };
+	const { distill, extract } = setup({ model });
+	await extract();
+	const report = await distill.runBatch({});
+	assert.equal(report.counts.gateFailed, 1, report.markdown);
+	assert.equal(report.counts.published, 0);
+	const d = (await distill.listDrafts())[0];
+	const { loadEvalSet } = await import(modUrl("lib/optimizer-eval.js"));
+	const frozen = await loadEvalSet(d.name);
+	assert.equal(frozen.cases.length, 4);
+	assert.equal(frozen.cases[0].critical, true);
+});

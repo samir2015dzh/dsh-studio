@@ -40,7 +40,7 @@ const { OPTIMIZER_DEFAULTS, optimizerRoot, resolveOptimizerConfig, inIdleWindow 
 const { classifyChange } = await import(modUrl("lib/optimizer-classify.js"));
 const { BUILTIN_REDLINES, checkRedlines, effectiveRedlines } = await import(modUrl("lib/skill-redlines.js"));
 const { createHostModel, createBudget, callWithBudget, BudgetStop } = await import(modUrl("lib/optimizer-model.js"));
-const { gateVerdict, scoreSkill } = await import(modUrl("lib/optimizer-eval.js"));
+const { gateVerdict, scoreSkill, normalizeGeneratedCases } = await import(modUrl("lib/optimizer-eval.js"));
 const { readVersionRecords, rollbackSkill } = await import(modUrl("lib/versions.js"));
 const { configureTelemetry } = await import(modUrl("lib/telemetry.js"));
 const { buildOptimizerTools, buildOptimizerRoutes, OPTIMIZER_API } = await import(modUrl("lib/optimizer-tools.js"));
@@ -686,4 +686,16 @@ test("[review B2] 无效评分不是零分基线，合法零和数字字符串�
 		const candidate = { mean: 8, cases: [{ id: "c1", score: 8, critical: true }] };
 		assert.equal(gateVerdict(score, candidate, { minDelta: 0, criticalTolerance: 0 }).pass, valid);
 	}
+});
+
+
+test("[review B4/S2] 生成集先截断再补关键；不改变旧字段口径", () => {
+	const input = Array.from({ length: 5 }, (_, i) => ({ id: "same", scenario: "场景 " + i, expected: "结果", critical: i === 4 }));
+	const cases = normalizeGeneratedCases(input, 4);
+	assert.equal(cases.length, 4);
+	assert.equal(cases[0].critical, true);
+	assert.equal(new Set(cases.map((c) => c.id)).size, 4);
+	assert.equal(normalizeGeneratedCases([{ prompt: "旧场景", expected: "结果" }], 1).length, 1);
+	assert.equal(normalizeGeneratedCases([{ prompt: "旧场景", expected: "结果" }], 1, { allowPrompt: false }).length, 0);
+	assert.deepEqual(normalizeGeneratedCases([null, {}], 1), []);
 });

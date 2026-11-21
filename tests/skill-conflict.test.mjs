@@ -12,7 +12,7 @@ process.env.HOME = fakeHome;
 process.env.USERPROFILE = fakeHome;
 process.env.DSH_HOME = join(fakeHome, ".dsh");
 
-const { saveSkill, getSkillDetail } = await import(pathToFileURL(join(pluginRoot, "lib/index.js")).href);
+const { saveSkill, savePolicy, getSkillDetail } = await import(pathToFileURL(join(pluginRoot, "lib/index.js")).href);
 const { UserError } = await import(pathToFileURL(join(pluginRoot, "lib/errors.js")).href);
 
 let failed = 0;
@@ -105,6 +105,26 @@ try {
 		const ok = await saveSkill(ctx, { name: "demo-skill", content: same, expectedMtime: opened.mtimeMs }, cwd);
 		assert(ok.ok, "mtime 变了但内容相同仍成功");
 		assert(readFileSync(skillFile, "utf8") === same, "内容保持不变");
+	}
+
+	console.log("\n[7] 同一 mtime 的两个保存不能都成功（全文/全文、全文/策略）");
+	for (const policy of [false, true]) {
+		writeFileSync(skillFile, original);
+		const old = new Date(Date.now() - 10000);
+		utimesSync(skillFile, old, old);
+		const opened = await getSkillDetail(ctx, "demo-skill", cwd);
+		const first = original.replace("原正文", "并发 A");
+		const second = original.replace("原正文", "并发 B");
+		const results = await Promise.allSettled([
+			saveSkill(ctx, { name: "demo-skill", content: first, expectedMtime: opened.mtimeMs }, cwd),
+			policy ? savePolicy(ctx, { name: "demo-skill", enabled: false, expectedMtime: opened.mtimeMs }, cwd)
+				: saveSkill(ctx, { name: "demo-skill", content: second, expectedMtime: opened.mtimeMs }, cwd)
+		]);
+		assert(results.filter((x) => x.status === "fulfilled").length === 1, "恰好一个并发编辑成功");
+		const loser = results.find((x) => x.status === "rejected");
+		assert(loser?.reason?.statusCode === 409 && loser.reason.code === "SKILL_CHANGED", "另一个得到 409 冲突");
+		const winner = results.findIndex((x) => x.status === "fulfilled");
+		if (!policy) assert(readFileSync(skillFile, "utf8") === (winner === 0 ? first : second), "最终文本属于成功的请求");
 	}
 } finally {
 	rmSync(fakeHome, { recursive: true, force: true });

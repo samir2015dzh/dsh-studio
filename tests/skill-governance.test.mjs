@@ -385,6 +385,8 @@ test("[4] 教训：有来源才成立、引用到来源事件；出补丁提案�
 	await g.decide({ id: upd.id, decision: "reject", reason: "先不更新" });
 
 	// 撤回：留痕 + 已写入的出撤回提案，批准后那一行消失
+	const appendix = "\n## 示例\n后续用户正文必须保留。\n\n## 附录\n不能随教训撤回。\n";
+	writeFileSync(files["git-commit-helper"], readFileSync(files["git-commit-helper"], "utf8") + appendix);
 	await assert.rejects(g.decide({ id: tele.id, decision: "withdraw" }), /要写理由/);
 	const w = await g.decide({ id: tele.id, decision: "withdraw", reason: "超时是网络问题，不是技能问题" });
 	assert.equal(w.lesson.status, "withdrawn");
@@ -392,7 +394,7 @@ test("[4] 教训：有来源才成立、引用到来源事件；出补丁提案�
 	assert.equal(w.proposal.type, "lesson-withdraw");
 	const wd = await g.decide({ id: w.proposal.id, decision: "approve" });
 	assert.doesNotMatch(readFileSync(files["git-commit-helper"], "utf8"), /lesson:/);
-	assert.equal(readFileSync(files["git-commit-helper"], "utf8"), A_TEXT, "撤回后回到原文");
+	assert.equal(readFileSync(files["git-commit-helper"], "utf8"), A_TEXT + appendix, "撤回只移除教训段，后续普通章节保持原样");
 	assert.equal((await readVersionRecords()).find((x) => x.id === wd.proposal.versionId).action, "lesson-withdraw");
 	// 撤回后再有同类证据：只记痕，不再出提案
 	telemetry.record("skill.trigger", { sid: "f6", skill: "git-commit-helper", ok: false, err: "timeout" });

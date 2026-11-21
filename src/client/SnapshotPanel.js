@@ -85,6 +85,7 @@ function SnapshotPreview({ preview }) {
 		"div",
 		{ className: "dshs-card", style: { gap: "4px", fontSize: "11.5px", maxHeight: "240px", overflow: "auto", borderColor: "var(--ds-a-line)" } },
 		h("b", { style: { fontSize: "12px", marginBottom: "4px" } }, "恢复预览 · " + preview.total + " 个文件，其中 " + rows.length + " 个会变"),
+		preview.integrity === "legacy-unverified" ? h(Note, { tone: "info" }, "旧包没有文件校验清单，本次未验证内容完整性。") : null,
 		rows.map((p) =>
 			h(
 				"div",
@@ -147,7 +148,7 @@ function SnapshotPanel() {
 	const doRestore = (id) => run(async () => {
 		const r = await api.snapshotRestore(id, false);
 		setPreview(null);
-		setMsg("已恢复 " + r.written + " 个文件" + (r.preSnapshot !== null ? "（恢复前快照 " + r.preSnapshot + "）" : ""));
+		setMsg("已恢复 " + r.written + " 个文件" + (r.preSnapshot !== null ? "（恢复前快照 " + r.preSnapshot + "）" : "") + (r.integrity === "legacy-unverified" ? "；旧包无文件校验清单，未验证内容完整性。" : ""));
 		await refresh();
 	});
 	const doPreview = (id) => run(async () => {

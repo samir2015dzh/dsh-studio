@@ -1,3 +1,4 @@
+import { historicalSource } from "../helpers/historical-source.mjs";
 // N-07 fixture：digest 路径「先排序截断、再解压」。全部在伪 HOME 里跑，不读真机会话日志、不联网。
 //
 // 三个伪 sessions 根：
@@ -52,11 +53,13 @@ const env = {
 
 // ---- 1. 基线版 lib（整个 lib 先拷过去，再按基线覆盖 extractor.js —— 相对 import 要能解析）----
 function buildBaselineLib() {
+	const source = historicalSource(BASELINE, "lib/extractor.js");
+	if (source === null) return null;
 	const dir = path.join(home, "baseline-lib");
 	fs.cpSync(path.join(pluginRoot, "lib"), dir, { recursive: true, filter: (src) => !src.endsWith(".bak-mcp-20261102") });
 	fs.writeFileSync(
 		path.join(dir, "extractor.js"),
-		execFileSync("git", ["show", `${BASELINE}:lib/extractor.js`], { cwd: pluginRoot, encoding: "utf8" }),
+		source,
 		"utf8"
 	);
 	return dir;
@@ -197,7 +200,8 @@ env.verdictRoot = rel(verdictRoot);
 // ---- 4. 加载两套 lib ----
 const baselineLib = buildBaselineLib();
 const load = (root, name) => import(pathToFileURL(path.join(root, name)).href);
-const baseline = await load(baselineLib, "extractor.js");
+const baseline = baselineLib ? await load(baselineLib, "extractor.js") : null;
+const takeBase = (fn) => baseline ? take(fn) : { v: [], n: null };
 const current = await load(path.join(pluginRoot, "lib"), "extractor.js");
 
 // ---- 5. 比对工具 ----
@@ -214,12 +218,12 @@ function diff(a, b) {
 const texts = (lib, list) => list.map((e) => lib.buildDigest(e.log));
 
 // ---- 6. 场景：主根 maxSessions=12 / (1,1) ----
-const base12 = await take(() => baseline.collectSessionDigests(sessionsRoot, 30, 12));
+const base12 = await takeBase(() => baseline.collectSessionDigests(sessionsRoot, 30, 12));
 const cur12 = await take(() => current.collectSessionDigests(sessionsRoot, 30, 12));
-const base11 = await take(() => baseline.collectSessionDigests(sessionsRoot, 30, 1));
+const base11 = await takeBase(() => baseline.collectSessionDigests(sessionsRoot, 30, 1));
 const cur11 = await take(() => current.collectSessionDigests(sessionsRoot, 30, 1));
 // 边界：非正整数上限沿用旧的 filter→slice 语义（slice(0,0) 为空）
-const base0 = await take(() => baseline.collectSessionDigests(sessionsRoot, 30, 0));
+const base0 = await takeBase(() => baseline.collectSessionDigests(sessionsRoot, 30, 0));
 const cur0 = await take(() => current.collectSessionDigests(sessionsRoot, 30, 0));
 
 // 并列组：mtime 相同的 3 个，结果序必须是 findSessionFiles 的枚举序
@@ -246,11 +250,11 @@ function enumOrder(root) {
 }
 
 // ---- 7. 场景：补位根 maxSessions=12 ----
-const baseFill = await take(() => baseline.collectSessionDigests(fillRoot, 30, 12));
+const baseFill = await takeBase(() => baseline.collectSessionDigests(fillRoot, 30, 12));
 const curFill = await take(() => current.collectSessionDigests(fillRoot, 30, 12));
 
 // ---- 8. 场景：collectSessionLogs 全量口径（N-03 承重墙）逐项比对 ----
-const logsBase = await take(() => baseline.collectSessionLogs(sessionsRoot, 30));
+const logsBase = await takeBase(() => baseline.collectSessionLogs(sessionsRoot, 30));
 const logsCur = await take(() => current.collectSessionLogs(sessionsRoot, 30));
 
 // ---- 9. 场景：shouldExtract（windowDays=1 / maxSessions=1 口径）----
@@ -279,19 +283,20 @@ const fakeLlm = (answer) => ({
 });
 
 process.env.DSH_SKILL_EXTRACTOR_SESSIONS = rememberRoot;
-const seBase = await take(() => baseline.shouldExtract(cfg, { llm: fakeLlm("YES") }));
+const seBase = await takeBase(() => baseline.shouldExtract(cfg, { llm: fakeLlm("YES") }));
 const seCur = await take(() => current.shouldExtract(cfg, { llm: fakeLlm("YES") }));
 
 process.env.DSH_SKILL_EXTRACTOR_SESSIONS = verdictRoot;
-const seNoBase = await take(() => baseline.shouldExtract(cfg, { llm: fakeLlm("NO") }));
+const seNoBase = await takeBase(() => baseline.shouldExtract(cfg, { llm: fakeLlm("NO") }));
 const seNoCur = await take(() => current.shouldExtract(cfg, { llm: fakeLlm("NO") }));
-const seYesBase = await take(() => baseline.shouldExtract(cfg, { llm: fakeLlm("YES") }));
+const seYesBase = await takeBase(() => baseline.shouldExtract(cfg, { llm: fakeLlm("YES") }));
 const seYesCur = await take(() => current.shouldExtract(cfg, { llm: fakeLlm("YES") }));
 delete process.env.DSH_SKILL_EXTRACTOR_SESSIONS;
 
 // ---- 10. 输出（只输出比对结论与计数，不输出整份会话正文）----
 const out = {
 	env,
+	baselineAvailable: baseline !== null,
 	main: {
 		tieGroup: tieOrder(logsCur.v),
 		tieGroupEnumOrder: enumOrder(sessionsRoot).filter((f) => tieOrder(logsCur.v).includes(f)),
@@ -301,9 +306,9 @@ const out = {
 		base11: { files: view(base11.v).map((e) => e.file), n: base11.v.length },
 		cur11: { files: view(cur11.v).map((e) => e.file), n: cur11.v.length },
 		same12: diff(view(base12.v), view(cur12.v)),
-		sameTexts12: diff(texts(baseline, base12.v), texts(current, cur12.v)),
+		sameTexts12: diff(baseline ? texts(baseline, base12.v) : null, texts(current, cur12.v)),
 		same11: diff(view(base11.v), view(cur11.v)),
-		sameTexts11: diff(texts(baseline, base11.v), texts(current, cur11.v)),
+		sameTexts11: diff(baseline ? texts(baseline, base11.v) : null, texts(current, cur11.v)),
 		edge0: { base: base0.v.length, cur: cur0.v.length, same: diff(view(base0.v), view(cur0.v)) },
 		counts12: { baseline: base12.n, current: cur12.n },
 		counts11: { baseline: base11.n, current: cur11.n }
@@ -314,7 +319,7 @@ const out = {
 		baseFiles: view(baseFill.v).map((e) => e.file),
 		curFiles: view(curFill.v).map((e) => e.file),
 		same: diff(view(baseFill.v), view(curFill.v)),
-		sameTexts: diff(texts(baseline, baseFill.v), texts(current, curFill.v)),
+		sameTexts: diff(baseline ? texts(baseline, baseFill.v) : null, texts(current, curFill.v)),
 		counts: { baseline: baseFill.n, current: curFill.n }
 	},
 	logs: {

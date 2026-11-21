@@ -1,3 +1,4 @@
+import { historicalSource } from "../helpers/historical-source.mjs";
 // N-04 fixture：恢复侧白名单镜像（S-05 残留）。
 //
 // 四件事全在伪 HOME 里做，不碰真机 ~/.dsh：
@@ -8,7 +9,6 @@
 //   4. dryRun：跳过计数与清单齐全，且磁盘零写入。
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { createHash } from "node:crypto";
 
@@ -61,16 +61,17 @@ function packSnapshot(id, entries) {
 	fs.writeFileSync(path.join(dir, "config.tar.gz"), snapshot.packTarGz(entries));
 	fs.writeFileSync(
 		path.join(dir, "manifest.json"),
-		JSON.stringify({ id, label: id, at: Date.now(), archiveBytes: 0, files: [] }, null, 2) + "\n"
+		JSON.stringify({ id, label: id, at: Date.now(), archiveBytes: 0, files: entries.map((entry) => ({ rel: entry.rel, bytes: entry.data.length, sha: sha(entry.data) })) }, null, 2) + "\n"
 	);
 	return id;
 }
 
 /** 基线版 snapshot.js（d99332c）—— 与当前 lib 同目录共存，只为「红的形态」留证。 */
 async function loadBaselineSnapshot() {
+	const source = historicalSource("d99332c", "lib/snapshot.js");
+	if (source === null) return null;
 	const dir = path.join(home, "baseline-lib");
 	fs.cpSync(path.join(pluginRoot, "lib"), dir, { recursive: true, filter: (src) => !src.endsWith(".bak-mcp-20261102") });
-	const source = execFileSync("git", ["show", "d99332c:lib/snapshot.js"], { cwd: pluginRoot, encoding: "utf8" });
 	fs.writeFileSync(path.join(dir, "snapshot.js"), source, "utf8");
 	return import(pathToFileURL(path.join(dir, "snapshot.js")).href);
 }
@@ -96,7 +97,7 @@ const compromiseId = packSnapshot("snapshot-compromise", [
 // ---- 1. 基线版：手搓包写穿本机同步凭据（红）
 const baseline = await loadBaselineSnapshot();
 fs.writeFileSync(path.join(dsh, "dsh-studio", "sync.json"), LOCAL_SYNC);
-const baselineRestore = await baseline.restoreSnapshot(compromiseId);
+const baselineRestore = baseline ? await baseline.restoreSnapshot(compromiseId) : null;
 const baselineSync = readSyncBytes();
 const baselineWroteEvil = fs.existsSync(path.join(dsh, "dsh-studio", "snapshots", "evil.txt"));
 const baselineWroteSyncWork = fs.existsSync(path.join(dsh, "dsh-studio", "sync-work"));
@@ -154,7 +155,7 @@ for (const [rel, bytes] of collectedMap) {
 process.stdout.write(
 	JSON.stringify({
 		compromiseId,
-		baseline: {
+		baseline: baseline ? {
 			ok: baselineRestore.dryRun === false,
 			syncSha: sha(baselineSync ?? Buffer.alloc(0)),
 			syncText: (baselineSync ?? Buffer.alloc(0)).toString("utf8"),
@@ -162,7 +163,7 @@ process.stdout.write(
 			hasSkippedField: Object.hasOwn(baselineRestore, "skipped"),
 			wroteEvil: baselineWroteEvil,
 			wroteSyncWork: baselineWroteSyncWork
-		},
+		} : null,
 		current: {
 			syncUnchanged: sha(currentSync ?? Buffer.alloc(0)) === sha(Buffer.from(LOCAL_SYNC, "utf8")),
 			syncSha: sha(currentSync ?? Buffer.alloc(0)),

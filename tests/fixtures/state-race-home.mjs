@@ -1,3 +1,4 @@
+import { historicalSource } from "../helpers/historical-source.mjs";
 // N-06 fixture：共享 JSON 状态的并发写保护。全部在伪 HOME 里跑，不读真机状态、不联网。
 //
 // 每个场景都在「基线版 lib」（git show d99332c:lib/*，拷到临时目录再按基线覆盖）与当前 lib
@@ -33,10 +34,12 @@ const CHANGED = [
 ];
 
 function buildBaselineLib() {
+	const sources = CHANGED.map((file) => [file, historicalSource(BASELINE, `lib/${file}`)]);
+	if (sources.some(([, source]) => source === null)) return null;
 	const dir = path.join(home, "baseline-lib");
 	fs.cpSync(path.join(pluginRoot, "lib"), dir, { recursive: true, filter: (src) => !src.endsWith(".bak-mcp-20261102") });
-	for (const file of CHANGED) {
-		fs.writeFileSync(path.join(dir, file), execFileSync("git", ["show", `${BASELINE}:lib/${file}`], { cwd: pluginRoot, encoding: "utf8" }), "utf8");
+	for (const [file, source] of sources) {
+		fs.writeFileSync(path.join(dir, file), source, "utf8");
 	}
 	fs.rmSync(path.join(dir, "state-lock.js"), { force: true });
 	return dir;
@@ -46,12 +49,12 @@ const baselineLib = buildBaselineLib();
 const load = (root, name) => import(pathToFileURL(path.join(root, name)).href);
 
 /** 两套 lib 各自独立加载（不同路径 = 不同模块实例），共用同一个伪 HOME。 */
-const baseline = {
+const baseline = baselineLib ? {
 	lifecycle: await load(baselineLib, "lifecycle.js"),
 	skillsrc: await load(baselineLib, "skillsrc.js"),
 	pending: await load(baselineLib, "pending.js"),
 	extractor: await load(baselineLib, "extractor.js")
-};
+} : null;
 const current = {
 	lifecycle: await load(path.join(pluginRoot, "lib"), "lifecycle.js"),
 	skillsrc: await load(path.join(pluginRoot, "lib"), "skillsrc.js"),
@@ -138,7 +141,7 @@ async function raceLifecycle(api) {
 	};
 }
 
-const lifecycleRaceOld = await raceLifecycle(baseline.lifecycle);
+const lifecycleRaceOld = baseline ? await raceLifecycle(baseline.lifecycle) : null;
 const lifecycleRaceNew = await raceLifecycle(current.lifecycle);
 
 // ── 场景 2：skill-lock 并发不丢（importSkill × 8 + pullPending 的 satisfied→relock 1 路）──
@@ -220,7 +223,7 @@ async function raceLock(api, pendingApi) {
 	};
 }
 
-const lockRaceOld = await raceLock(baseline.skillsrc, baseline.pending);
+const lockRaceOld = baseline ? await raceLock(baseline.skillsrc, baseline.pending) : null;
 const lockRaceNew = await raceLock(current.skillsrc, current.pending);
 
 // ── 场景 3：candidates 并发不丢（updateCandidate × 8 + archiveCandidates × 4）──
@@ -262,7 +265,7 @@ async function raceCandidates(api) {
 	};
 }
 
-const candidatesRaceOld = await raceCandidates(baseline.extractor);
+const candidatesRaceOld = baseline ? await raceCandidates(baseline.extractor) : null;
 const candidatesRaceNew = await raceCandidates(current.extractor);
 
 // ── 场景 4：异常必释放（临界区内抛错 → 后续同文件周期在 5 秒内完成）──
@@ -355,7 +358,7 @@ async function sequentialRun(apis) {
 	};
 }
 
-const seqOld = await sequentialRun({ lifecycle: baseline.lifecycle, skillsrc: baseline.skillsrc, extractor: baseline.extractor });
+const seqOld = baseline ? await sequentialRun(baseline) : null;
 const seqNew = await sequentialRun({ lifecycle: current.lifecycle, skillsrc: current.skillsrc, extractor: current.extractor });
 
 // ── 场景 6：usage-signals 水位线并发（两路 ingest 各带独立会话，水位线不丢条目）──
@@ -372,7 +375,7 @@ async function raceWatermark(api) {
 	return { keys: Object.keys(mark.sessions ?? {}).sort(), version: mark.version };
 }
 
-const watermarkOld = await raceWatermark(await load(baselineLib, "usage-signals.js"));
+const watermarkOld = baseline ? await raceWatermark(await load(baselineLib, "usage-signals.js")) : null;
 const watermarkNew = await raceWatermark(await load(path.join(pluginRoot, "lib"), "usage-signals.js"));
 
 // ── 场景 7：串行化自身的开销（同一组顺序调用各跑 60 次，粗测）──
@@ -384,29 +387,30 @@ async function timeSequential(api) {
 }
 
 const timing = {
-	old: await timeSequential(baseline.lifecycle),
+	old: baseline ? await timeSequential(baseline.lifecycle) : null,
 	new: await timeSequential(current.lifecycle)
 };
 
 process.stdout.write(
 	JSON.stringify({
 		baselineCommit: BASELINE,
+		baselineAvailable: baseline !== null,
 		lifecycleRace: { old: lifecycleRaceOld, new: lifecycleRaceNew },
 		lockRace: { old: lockRaceOld, new: lockRaceNew },
 		candidatesRace: { old: candidatesRaceOld, new: candidatesRaceNew },
 		exception: exceptionNew,
 		sequential: {
-			same: {
+			same: seqOld ? {
 				lifecycle: seqOld.lifecycle === seqNew.lifecycle,
 				lock: seqOld.lock === seqNew.lock,
 				candidates: seqOld.candidates === seqNew.candidates,
 				archive: seqOld.archive === seqNew.archive
-			},
+			} : null,
 			hashes: {
-				old: { lifecycle: seqOld.lifecycle, lock: seqOld.lock, candidates: seqOld.candidates, archive: seqOld.archive },
+				old: seqOld ? { lifecycle: seqOld.lifecycle, lock: seqOld.lock, candidates: seqOld.candidates, archive: seqOld.archive } : null,
 				new: { lifecycle: seqNew.lifecycle, lock: seqNew.lock, candidates: seqNew.candidates, archive: seqNew.archive }
 			},
-			fields: { old: { lifecycle: seqOld.lifecycleState, candidates: seqOld.candidatesState, archive: seqOld.archiveState }, new: { lifecycle: seqNew.lifecycleState, candidates: seqNew.candidatesState, archive: seqNew.archiveState } }
+			fields: { old: seqOld ? { lifecycle: seqOld.lifecycleState, candidates: seqOld.candidatesState, archive: seqOld.archiveState } : null, new: { lifecycle: seqNew.lifecycleState, lock: seqNew.lockState, candidates: seqNew.candidatesState, archive: seqNew.archiveState } }
 		},
 		watermark: { old: watermarkOld, new: watermarkNew },
 		timing

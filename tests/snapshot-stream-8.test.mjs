@@ -106,3 +106,22 @@ test("[#8 审计 7] 从 pre-restore 快照恢复：修剪挪到写完之后，�
 	assert.equal(r.failed.length, 0);
 	assert.ok(r.written > 0, "第二遍照样读得到包");
 });
+
+
+test("[review B5] 清单与合法重压缩包不一致时，预演和正式恢复均不得写目标", async () => {
+	put("AGENTS.md", "本机正文\n");
+	const m = await createSnapshot("integrity");
+	const dir = join(snap.snapshotsDir(), m.id);
+	const archive = join(dir, "config.tar.gz");
+	const entries = unpackTarGz(readFileSync(archive));
+	entries.find((e) => e.rel === "AGENTS.md").data = Buffer.from("替换内容\n");
+	writeFileSync(archive, packTarGz(entries));
+	for (const dryRun of [true, false]) {
+		await assert.rejects(restoreSnapshot(m.id, { dryRun }), /快照内容校验失败/);
+		assert.equal(readFileSync(join(dsh, "AGENTS.md"), "utf8"), "本机正文\n");
+	}
+	// 缺清单的历史包保留兼容入口，但不能冒称已验证。
+	rmSync(join(dir, "manifest.json"));
+	const legacy = await restoreSnapshot(m.id, { dryRun: true });
+	assert.equal(legacy.integrity, "legacy-unverified");
+});

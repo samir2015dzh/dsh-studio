@@ -61,7 +61,7 @@ function packSnapshot(id, entries) {
 	fs.writeFileSync(path.join(dir, "config.tar.gz"), snapshot.packTarGz(entries));
 	fs.writeFileSync(
 		path.join(dir, "manifest.json"),
-		JSON.stringify({ id, label: id, at: Date.now(), archiveBytes: 0, files: [] }, null, 2) + "\n"
+		JSON.stringify({ id, label: id, at: Date.now(), archiveBytes: 0, files: entries.map((entry) => ({ rel: entry.rel, bytes: entry.data.length, sha: sha(entry.data) })) }, null, 2) + "\n"
 	);
 	return id;
 }

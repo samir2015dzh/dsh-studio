@@ -456,12 +456,13 @@ if (raceRun.status !== 0) {
 	process.exit(1);
 }
 const r = JSON.parse(raceRun.stdout);
+if (!r.baselineAvailable) console.log("SKIP state-race 历史对拍：d99332c 源码不可用；当前并发、异常释放和顺序状态断言继续");
 
 // 17.1 lifecycle 并发不丢（8 路 markSkillUsed + 8 路 recordSkillLoads + 4 路同名 mark）
 {
 	const old = r.lifecycleRace.old;
 	const now = r.lifecycleRace.new;
-	ok(
+	if (old !== null) ok(
 		old.keyCount < old.expectedKeys,
 		`基线版并发 20 路后只有 ${old.keyCount} 个键在位（期望 ${old.expectedKeys}）：${old.run.rejected} 路在临界区直接抛 .tmp 争用（${old.run.firstError.slice(0, 60)}…），文件存在=${old.file.exists}、可解析=${old.file.parsable}（红）`
 	);
@@ -483,7 +484,7 @@ const r = JSON.parse(raceRun.stdout);
 {
 	const old = r.lockRace.old;
 	const now = r.lockRace.new;
-	ok(old.lockCount < old.expected, `基线版并发写 lock 后只剩 ${old.lockCount} 条记录（期望 ${old.expected}；${old.run.rejected} 路抛错）（红）`);
+	if (old !== null) ok(old.lockCount < old.expected, `基线版并发写 lock 后只剩 ${old.lockCount} 条记录（期望 ${old.expected}；${old.run.rejected} 路抛错）（红）`);
 	ok(now.lockCount === now.expected && now.run.rejected === 0, `当前版 ${now.lockCount}/${now.expected} 条记录全在、无异常（绿）`);
 	ok(now.allFieldsOk === true, `每条记录五字段形态正确：${now.keys.join(",")}`);
 	ok(now.relocked === true, "relock 形态（satisfied 补锁）在同一把锁里正常完成");
@@ -493,7 +494,7 @@ const r = JSON.parse(raceRun.stdout);
 {
 	const old = r.candidatesRace.old;
 	const now = r.candidatesRace.new;
-	ok(
+	if (old !== null) ok(
 		old.rationaleUpdated === 1 && old.archiveLength === 1,
 		`基线版：8 路并发编辑只有 ${old.rationaleUpdated} 条的改动生效，4 路归档只留下 ${old.archiveLength} 条（红）`
 	);
@@ -512,7 +513,7 @@ const r = JSON.parse(raceRun.stdout);
 }
 
 // 17.5 顺序等价（同一组顺序操作，基线版与当前版四个状态文件逐字节一致）
-{
+if (r.baselineAvailable) {
 	const same = r.sequential.same;
 	ok(
 		same.lifecycle && same.lock && same.candidates && same.archive,
@@ -520,9 +521,21 @@ const r = JSON.parse(raceRun.stdout);
 	);
 }
 
+// 当前顺序契约独立于历史版本，不以当前结果自身作期望。
+{
+	const fields = r.sequential.fields.new;
+	const alpha = fields.lifecycle?.alpha;
+	const beta = fields.lifecycle?.beta;
+	ok(alpha?.writeCount === 2 && alpha.useCount === 1 && alpha.loadSessions?.join(",") === "s1", "顺序 alpha：两次写入、一次会话加载");
+	ok(beta?.writeCount === 1 && beta.useCount === 1 && beta.loadSessions?.join(",") === "s1", "顺序 beta：一次写入、一次会话加载");
+	ok(Object.keys(fields.lock ?? {}).join(",") === "seq-one" && /^[0-9a-f]{64}$/.test(fields.lock?.["seq-one"]?.sha256 ?? ""), "顺序 import 保留 seq-one 的完整内容哈希记录");
+	ok(fields.candidates?.length === 2 && fields.candidates.find((c) => c.id === "q-1")?.rationale === "first" && fields.candidates.find((c) => c.id === "q-2")?.description === "second", "顺序编辑保留两条候选及各自更新");
+	ok(fields.archive?.length === 1 && fields.archive[0].name === "q-two" && fields.archive[0].decision === "rejected", "顺序归档保留 q-two 的拒绝裁决");
+}
+
 // 17.6 usage-signals 水位线并发（两路 ingest 各带一个独立会话）
 {
-	ok(r.watermark.old.keys.length === 1, `基线版两路并发 ingest 只剩 ${r.watermark.old.keys.length} 个会话水位（期望 2）（红）`);
+	if (r.baselineAvailable) ok(r.watermark.old.keys.length === 1, `基线版两路并发 ingest 只剩 ${r.watermark.old.keys.length} 个会话水位（期望 2）（红）`);
 	ok(
 		r.watermark.new.keys.length === 2 && r.watermark.new.keys.join(",") === "wa,wb",
 		`当前版两个会话水位都在：${r.watermark.new.keys.join(",")}`
@@ -530,7 +543,7 @@ const r = JSON.parse(raceRun.stdout);
 }
 
 // 17.7 串行化自身开销（60 次顺序 markSkillUsed，粗测；阈值只防明显变慢）
-ok(
+if (r.baselineAvailable) ok(
 	r.timing.new <= r.timing.old * 2 + 100,
 	`顺序 60 次 markSkillUsed：基线版 ${r.timing.old} ms / 当前版 ${r.timing.new} ms（文件级排队没有串进不相干的等待）`
 );

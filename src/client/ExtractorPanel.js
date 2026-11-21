@@ -28,6 +28,12 @@ function ExtractorPanel() {
 	const [busy, setBusy] = React.useState(false);
 	const [msg, setMsg] = React.useState("");
 	const [err, setErr] = React.useState("");
+	const [loadErr, setLoadErr] = React.useState("");
+	const [distillErr, setDistillErr] = React.useState("");
+	const [distillView, setDistillView] = React.useState(null);
+	const [draftSource, setDraftSource] = React.useState(null);
+	const [batchReport, setBatchReport] = React.useState("");
+	const [decisionReason, setDecisionReason] = React.useState("");
 	/** Assemble the full SKILL.md text for a candidate (frontmatter + body). */
 	const assemble = (c) => {
 		const front = "---\nname: " + c.name + "\ndescription: " + (c.description || "") + (c.group ? "\nmetadata:\n  group: " + c.group : "") + "\n---\n";
@@ -51,9 +57,15 @@ function ExtractorPanel() {
 			setCandidates((c && c.candidates) || []);
 			const rec = await api.extractRecent().catch(() => null);
 			setRecent((rec && rec.skills) || []);
-			setErr("");
+			try {
+				setDistillView(await api.distillStatus());
+				setDistillErr("");
+			} catch (error) {
+				setDistillErr("没法读取蒸馏草稿：" + String(error instanceof Error ? error.message : error));
+			}
+			setLoadErr("");
 		} catch (error) {
-			setErr("没法读取提取状态：" + String(error instanceof Error ? error.message : error));
+			setLoadErr("没法读取提取状态：" + String(error instanceof Error ? error.message : error));
 		}
 	}, []);
 	React.useEffect(() => {
@@ -140,13 +152,29 @@ function ExtractorPanel() {
 			setMsg("已忽略这条候选。");
 			await load();
 		});
+	const runDistill = () => run(async () => {
+		const report = await api.distillRun();
+		setBatchReport(report.markdown || "本批未返回详细报告。");
+		await load();
+		if (["error", "extract-failed", "budget-stop"].includes(report.status)) setErr("本批未全部完成，请查看批次报告。");
+		else setMsg("批次完成：入库 " + (report.counts?.published ?? 0) + "，转合并提案 " + (report.counts?.mergeProposed ?? 0) + "。");
+	});
+	const decideDraft = (d, decision) => run(async () => {
+		await api.distillDecide(d.id, decision, decisionReason);
+		setDecisionReason("");
+		setMsg(d.name + (decision === "requeue" ? " 已重新排队，仍须过评估门。" : " 已淘汰，记录保留。"));
+		await load();
+	});
+	const showDraftSource = (id) => run(async () => setDraftSource(await api.distillSource(id)));
+	const draftLabels = { queued: "排队", published: "已入库", failed: "未通过", "merge-proposed": "待所有者审批合并", merged: "已并入", "merge-rejected": "合并被拒", discarded: "已淘汰" };
+	const distillDrafts = [...(distillView?.queue ?? []), ...(distillView?.drafts ?? [])];
 	const status = view
 		? [
 				[view.enabled ? "已启用" : "已禁用", view.enabled ? "is-ok" : "is-line"],
 				[view.intervalMinutes === 0 ? "已关闭定时" : "每 " + view.intervalMinutes + " 分钟", ""],
 				["窗口 " + view.windowDays + " 天", ""],
 				["LLM " + (view.dshModel ? "走 DSH 模型" : view.configured ? "已配置" : "未配置") + (view.resolvedModel ? "（实际用 " + view.resolvedModel + "）" : ""), ""],
-				["待确认 " + (view.queued ?? 0) + " 个", (view.queued ?? 0) > 0 ? "is-warn" : ""],
+				["历史候选 " + (view.queued ?? 0) + " 个", (view.queued ?? 0) > 0 ? "is-warn" : ""],
 				["上次 " + (view.lastRunAt ? new Date(view.lastRunAt).toLocaleString() : "未运行"), ""],
 				["默认存 agent 根" + (view.mirrorDir ? " · 额外镜像 " + view.mirrorDir : "（不存镜像）"), ""]
 			]
@@ -293,10 +321,12 @@ function ExtractorPanel() {
 			"div",
 			{ className: "dshs-row" },
 			h("button", { className: "dshs-btn dshs-btn-pri", onClick: () => void saveConfig(), disabled: busy }, "保存配置"),
-			h("button", { className: "dshs-btn", onClick: () => void runExtract(), disabled: busy }, "立即提取"),
+			h("button", { className: "dshs-btn", onClick: () => void runExtract(), disabled: busy }, "立即提取草稿"),
 			h("button", { className: "dshs-btn dshs-btn-ghost", onClick: () => void load(), disabled: busy }, "刷新")
 		),
 		err !== "" && h(Note, { tone: "err" }, err),
+		loadErr !== "" && h(Note, { tone: "err" }, loadErr),
+		distillErr !== "" && h(Note, { tone: "err" }, distillErr),
 		msg !== "" && h(Note, { tone: "info" }, msg),
 		h(
 			"div",
@@ -318,15 +348,41 @@ function ExtractorPanel() {
 				])
 			)
 		),
+		h("div", { className: "dshs-list" },
+			sectionTitle("蒸馏草稿（排队与最近处理）", distillDrafts.length),
+			h(Note, { tone: "info" }, "提取只生成草稿；手动过门通过才入库，相似内容只生成待批合并提案。闲时批量" + (distillView?.config?.enabled ? "已开启。" : "未开启（默认关）。")),
+			h("button", { className: "dshs-btn", onClick: () => void runDistill(), disabled: busy || !distillView || distillView.schedule?.running || !(distillView.queue?.length > 0) }, "处理一批草稿（会调用模型）"),
+			h("input", { className: "dshs-input", "aria-label": "下次草稿决定说明", placeholder: "下次淘汰或重排的说明（可选）", value: decisionReason, onChange: (e) => setDecisionReason(e.target.value) }),
+			distillDrafts.length === 0 ? h("div", { className: "dshs-empty" }, "暂无蒸馏草稿。点击立即提取草稿后可在这里处理。") : null,
+			distillDrafts.map((d) => h("div", { key: d.id, className: "dshs-card" },
+				h("b", {}, d.name + " · " + (draftLabels[d.status] ?? d.status)),
+				h("div", { className: "dshs-meta" }, d.id),
+				h("div", { className: "dshs-desc" }, d.description || ""),
+				d.eval ? h("div", {}, "评估均分 " + d.eval.mean + " · " + d.eval.verdict) : null,
+				d.failure ? h(Note, { tone: "err" }, (d.failure.reasons ?? []).join("；")) : null,
+				d.merge ? h("div", {}, "合并去向：" + d.merge.into + " · 提案 " + d.merge.proposalId + "（由所有者通过治理工具处理，不会在此自动批准）") : null,
+				h("div", { className: "dshs-row" },
+					h("button", { className: "dshs-btn", disabled: busy, onClick: () => void showDraftSource(d.id) }, "查看来源 · " + d.name),
+					["queued", "failed", "merge-rejected"].includes(d.status) ? h("button", { className: "dshs-btn", disabled: busy, onClick: () => void decideDraft(d, "discard") }, "淘汰 · " + d.name) : null,
+					["failed", "merge-rejected", "discarded"].includes(d.status) ? h("button", { className: "dshs-btn", disabled: busy, onClick: () => void decideDraft(d, "requeue") }, "重新排队 · " + d.name) : null
+				)
+			)),
+			draftSource ? h("div", { className: "dshs-card" },
+				h("b", {}, "来源：" + draftSource.name),
+				...(draftSource.sessions ?? []).map((session) => h("pre", { key: session.id, style: { whiteSpace: "pre-wrap" } }, session.id + (session.readable ? "" : "（原日志不可读；保留关键轮次摘录）") + "\n" + (session.readable ? session.context : session.turns ?? []).map((t) => "#" + t.turn + " " + t.role + "：" + (t.text ?? t.excerpt ?? "")).join("\n"))),
+				h("button", { className: "dshs-btn", onClick: () => setDraftSource(null) }, "关闭来源")
+			) : null,
+			batchReport ? h("details", {}, h("summary", {}, "最近一次手动批次报告"), h("pre", { style: { whiteSpace: "pre-wrap" } }, batchReport)) : null
+		),
 		h(
 			"div",
 			{ className: "dshs-list" },
-			sectionTitle("待确认候选", candidates.length),
+			sectionTitle("历史待确认候选", candidates.length),
 			candidates.length === 0
 				? h(
 						"div",
 						{ className: "dshs-empty", style: { padding: "12px" } },
-						"还没有待确认项。提取成功后一般会直接写入技能库；只有没写成时才会出现在这里。"
+						"这里保留旧版本的待确认候选。新提取结果显示在上方蒸馏草稿中。"
 					)
 				: null,
 			candidates.map((c) =>

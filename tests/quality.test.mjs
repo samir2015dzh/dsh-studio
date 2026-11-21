@@ -20,13 +20,6 @@ const ok = (cond, msg) => {
 	}
 };
 
-// 公开导出不含开发历史：基线对拍依赖历史提交 d99332c，缺失时整体跳过
-try {
-	execFileSync("git", ["cat-file", "-e", "d99332c^{commit}"], { cwd: path.join(here, ".."), stdio: "pipe" });
-} catch {
-	console.log("SKIP quality: 公开导出不含开发历史（基线提交 d99332c 不在），跳过基线对拍");
-	process.exit(0);
-}
 
 const run = spawnSync(process.execPath, [path.join(here, "fixtures", "quality-home.mjs"), home, String(NOW)], {
 	env: { ...process.env, USERPROFILE: home, HOME: home, DSH_AGENTS_HOME: "", DSH_SKILL_EXTRACTOR_CANDIDATES: "" },
@@ -384,14 +377,17 @@ if (guardRun.status !== 0) {
 const g = JSON.parse(guardRun.stdout);
 
 // 16.1 恶意包·凭据覆盖：同一份手搓包，基线版写穿、当前版原样不动
-ok(
-	/POISONED-BY-PACKAGE/.test(g.baseline.syncText),
-	`基线版（d99332c）把手搓包里的 dsh-studio/sync.json 覆盖到本机凭据（红）：${g.baseline.syncSha.slice(0, 12)}…`
-);
-ok(
-	g.baseline.hasSkippedField === false && g.baseline.wroteEvil === true && g.baseline.wroteSyncWork === true,
-	"基线版没有白名单镜像：snapshots/evil.txt 与 sync-work/x.txt 都照写（红）"
-);
+if (g.baseline !== null) {
+	ok(
+		/POISONED-BY-PACKAGE/.test(g.baseline.syncText),
+		`基线版（d99332c）把手搓包里的 dsh-studio/sync.json 覆盖到本机凭据（红）：${g.baseline.syncSha.slice(0, 12)}…`
+	);
+	ok(
+		g.baseline.hasSkippedField === false && g.baseline.wroteEvil === true && g.baseline.wroteSyncWork === true,
+		"基线版没有白名单镜像：snapshots/evil.txt 与 sync-work/x.txt 都照写（红）"
+	);
+} else console.log("SKIP snapshot 历史漏洞对拍：d99332c 不可用；当前安全断言继续");
+
 ok(g.current.syncUnchanged === true, `当前版：本机 sync.json 逐字节不变（sha ${g.current.syncSha.slice(0, 12)}…）`);
 const poisonPaths = ["dsh-studio/sync.json", "dsh-studio/snapshots/evil.txt", "dsh-studio/sync-work/x.txt"];
 ok(
@@ -572,75 +568,80 @@ ok(
 );
 ok(typeof n7.env.zstdPath === "string" && n7.env.zstdPath !== "zstd", `计数对象是真 zstd：${n7.env.zstdPath}`);
 
+if (!n7.baselineAvailable) console.log("SKIP extractor 历史对拍：af7daae 不可用；当前功能和计数断言继续");
+ok(n7.main.cur12.n === 12 && n7.main.cur11.n === 1 && n7.main.edge0.cur === 0, "当前 maxSessions=12/1/0 的独立契约");
+ok(n7.fill.curCount === 12 && n7.logs.curCount === 46, "当前补位与全量日志数量的独立契约");
+ok(n7.main.counts12.current === 12 && n7.main.counts11.current === 1 && n7.fill.counts.current === 15 && n7.logs.counts.current === 47, "当前解压次数不依赖历史对象");
+ok(n7.shouldExtract.remember.cur.worth === true && n7.shouldExtract.remember.cur.remember === true && n7.shouldExtract.no.cur.worth === false && n7.shouldExtract.yes.cur.worth === true, "当前 remember / NO / YES 分支的独立契约");
 // 18.1 maxSessions=12：新旧 digest 列表逐项深比对（file/mtime/size/log 全字段 + buildDigest 文本）
-ok(n7.main.base12.n === 12 && n7.main.cur12.n === 12, `两条路径各取 12 条（旧 ${n7.main.base12.n} / 新 ${n7.main.cur12.n}）`);
-ok(n7.main.same12 === null, `maxSessions=12 的 digest 条目逐项深比对全等（${firstDiff(n7.main.same12)}）`);
-ok(n7.main.sameTexts12 === null, `buildDigest 文本逐条全等（${firstDiff(n7.main.sameTexts12)}）`);
-ok(
+if (n7.baselineAvailable) ok(n7.main.base12.n === 12 && n7.main.cur12.n === 12, `两条路径各取 12 条（旧 ${n7.main.base12.n} / 新 ${n7.main.cur12.n}）`);
+if (n7.baselineAvailable) ok(n7.main.same12 === null, `maxSessions=12 的 digest 条目逐项深比对全等（${firstDiff(n7.main.same12)}）`);
+if (n7.baselineAvailable) ok(n7.main.sameTexts12 === null, `buildDigest 文本逐条全等（${firstDiff(n7.main.sameTexts12)}）`);
+if (n7.baselineAvailable) ok(
 	n7.main.cur12.files.every((f) => /[\\/]s(0\d|1[01])[\\/]session\.jsonl\.zstd$/.test(f)),
 	`新路径取到的全是有效会话（最新 12 个 = s00~s11）：${n7.main.cur12.files.map((f) => path.basename(path.dirname(f))).join(",")}`
 );
 
 // 18.2 (1,1) 口径：shouldExtract 走的那条
-ok(n7.main.base11.n === 1 && n7.main.cur11.n === 1, `(1,1) 两条路径各 1 条（旧 ${n7.main.base11.n} / 新 ${n7.main.cur11.n}）`);
-ok(n7.main.same11 === null && n7.main.sameTexts11 === null, `(1,1) 的条目与文本同样全等（${firstDiff(n7.main.same11)}）`);
+if (n7.baselineAvailable) ok(n7.main.base11.n === 1 && n7.main.cur11.n === 1, `(1,1) 两条路径各 1 条（旧 ${n7.main.base11.n} / 新 ${n7.main.cur11.n}）`);
+if (n7.baselineAvailable) ok(n7.main.same11 === null && n7.main.sameTexts11 === null, `(1,1) 的条目与文本同样全等（${firstDiff(n7.main.same11)}）`);
 
 // 18.3 并列 mtime 的稳定序：并列组相对次序必须等于 findSessionFiles 枚举序
 ok(n7.main.tieGroup.length === 3, `并列 mtime 组命中 3 个（实际 ${n7.main.tieGroup.length}）`);
-ok(
+if (n7.baselineAvailable) ok(
 	dq(n7.main.tieGroup) === dq(n7.main.tieGroupEnumOrder),
 	`并列组保持枚举序（实测 ${n7.main.tieGroup.map((f) => path.basename(path.dirname(f))).join(" → ")}）`
 );
 
 // 18.4 补位：前 3 个空/坏不占名额，继续往后凑满 12
-ok(n7.fill.baseCount === 12 && n7.fill.curCount === 12, `补位场景两条路径都取满 12 条（旧 ${n7.fill.baseCount} / 新 ${n7.fill.curCount}）`);
-ok(n7.fill.same === null && n7.fill.sameTexts === null, `补位后的序列与旧逻辑全等（${firstDiff(n7.fill.same)}）`);
-ok(
+if (n7.baselineAvailable) ok(n7.fill.baseCount === 12 && n7.fill.curCount === 12, `补位场景两条路径都取满 12 条（旧 ${n7.fill.baseCount} / 新 ${n7.fill.curCount}）`);
+if (n7.baselineAvailable) ok(n7.fill.same === null && n7.fill.sameTexts === null, `补位后的序列与旧逻辑全等（${firstDiff(n7.fill.same)}）`);
+if (n7.baselineAvailable) ok(
 	n7.fill.curFiles[0].endsWith(path.join("f03", "session.jsonl.zstd")) && n7.fill.curFiles[11].endsWith(path.join("f14", "session.jsonl.zstd")),
 	`补位命中第 4~15 个会话：${path.basename(path.dirname(n7.fill.curFiles[0]))} … ${path.basename(path.dirname(n7.fill.curFiles[11]))}`
 );
 
 // 18.5 解压计数（真实 zstd 子进程：拦截 execFile 且转发真调用，只数 argv = ["-d","-c","*.zstd"]）
-ok(
+if (n7.baselineAvailable) ok(
 	n7.main.counts12.baseline === 47 && n7.main.counts12.current === 12,
 	`maxSessions=12 的 zstd 子进程次数：基线版 ${n7.main.counts12.baseline} 次 → 当前版 ${n7.main.counts12.current} 次（窗口内 47 个 .zstd 全部解压 vs 只解压取到的 12 个）`
 );
-ok(
+if (n7.baselineAvailable) ok(
 	n7.main.counts11.baseline === 47 && n7.main.counts11.current === 1,
 	`(1,1) 的 zstd 子进程次数：基线版 ${n7.main.counts11.baseline} 次 → 当前版 ${n7.main.counts11.current} 次`
 );
-ok(
+if (n7.baselineAvailable) ok(
 	n7.fill.counts.baseline === 20 && n7.fill.counts.current === 15,
 	`补位场景：基线版 ${n7.fill.counts.baseline} 次 → 当前版 ${n7.fill.counts.current} 次（跳过 3 个空/坏 + 取满 12）`
 );
 
 // 18.6 N-03 承重墙：collectSessionLogs 全量口径逐项不变（解压次数也不变）
-ok(
+if (n7.baselineAvailable) ok(
 	n7.logs.baseCount === n7.logs.curCount && n7.logs.baseCount === 46,
 	`collectSessionLogs 返回条数不变（旧 ${n7.logs.baseCount} / 新 ${n7.logs.curCount}）`
 );
-ok(n7.logs.same === null, `collectSessionLogs 全部字段逐项深比对全等（${firstDiff(n7.logs.same)}）`);
-ok(
+if (n7.baselineAvailable) ok(n7.logs.same === null, `collectSessionLogs 全部字段逐项深比对全等（${firstDiff(n7.logs.same)}）`);
+if (n7.baselineAvailable) ok(
 	n7.logs.counts.baseline === 47 && n7.logs.counts.current === 47,
 	`全量路径照旧解压全部窗口内 .zstd：基线版 ${n7.logs.counts.baseline} / 当前版 ${n7.logs.counts.current} 次`
 );
 
 // 18.7 shouldExtract（windowDays=1 / maxSessions=1）：返回形态与 worth 判定逐项不变
-ok(
+if (n7.baselineAvailable) ok(
 	n7.shouldExtract.remember.same === null && n7.shouldExtract.remember.cur.worth === true && n7.shouldExtract.remember.cur.remember === true,
 	`remember 分支：返回体全等且 worth/remember 都是 true（解压 ${n7.shouldExtract.remember.counts.baseline} → ${n7.shouldExtract.remember.counts.current} 次）`
 );
-ok(
+if (n7.baselineAvailable) ok(
 	n7.shouldExtract.no.same === null && n7.shouldExtract.no.cur.worth === false && n7.shouldExtract.no.base.worth === false,
 	"llm 答 NO → 两版都是 worth=false"
 );
-ok(
+if (n7.baselineAvailable) ok(
 	n7.shouldExtract.yes.same === null && n7.shouldExtract.yes.cur.worth === true && n7.shouldExtract.yes.base.worth === true,
 	"llm 答 YES → 两版都是 worth=true"
 );
 
 // 18.8 边界：非正整数上限仍走旧的 filter→slice 语义（slice(0,0) 为空）
-ok(n7.main.edge0.base === 0 && n7.main.edge0.cur === 0 && n7.main.edge0.same === null, "maxSessions=0 两版都返回空列表");
+if (n7.baselineAvailable) ok(n7.main.edge0.base === 0 && n7.main.edge0.cur === 0 && n7.main.edge0.same === null, "maxSessions=0 两版都返回空列表");
 rmSync(digestHome, { recursive: true, force: true });
 
 rmSync(historyHome, { recursive: true, force: true });

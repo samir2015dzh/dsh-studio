@@ -1,3 +1,4 @@
+import { historicalSource } from "../helpers/historical-source.mjs";
 // N-12 fixture：createSnapshot 流式打包的等价性与边界。
 //
 // 全部在伪 HOME 里做（USERPROFILE / HOME / DSH_HOME 三件套指向它），不碰真机 ~/.dsh：
@@ -9,7 +10,6 @@
 //   5. 打包中途源文件消失：不留正式包、不留临时文件、不留快照目录。
 import fs from "node:fs";
 import path from "node:path";
-import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { createHash, randomBytes } from "node:crypto";
 
@@ -36,9 +36,10 @@ const readOrNull = (target) => {
 
 /** 基线版 snapshot.js（af7daae）—— 整目录 cp 后覆盖，相对 import 才解析得开。 */
 async function loadBaseline() {
+	const source = historicalSource("af7daae", "lib/snapshot.js");
+	if (source === null) return null;
 	const dir = path.join(home, "baseline-lib");
 	fs.cpSync(path.join(pluginRoot, "lib"), dir, { recursive: true, filter: (src) => !src.includes(".bak-mcp-") });
-	const source = execFileSync("git", ["show", "af7daae:lib/snapshot.js"], { cwd: pluginRoot, encoding: "utf8" });
 	fs.writeFileSync(path.join(dir, "snapshot.js"), source, "utf8");
 	return lib(dir, "snapshot.js");
 }
@@ -134,22 +135,24 @@ function deepDiff(expected, actual) {
 layOutHome();
 const baseline = await loadBaseline();
 const beforeDirs = snapshotDirs();
-const baselineManifest = await baseline.createSnapshot("n12-baseline");
+const baselineManifest = baseline ? await baseline.createSnapshot("n12-baseline") : null;
 const currentManifest = await current.createSnapshot("n12-current");
-const baselineEntries = archiveOf(baselineManifest.id);
+const baselineEntries = baselineManifest ? archiveOf(baselineManifest.id) : [];
 const currentEntries = archiveOf(currentManifest.id);
-const baselineArchiveSha = sha(archiveBytesOf(baselineManifest.id));
+const baselineArchiveSha = baselineManifest ? sha(archiveBytesOf(baselineManifest.id)) : null;
 const currentArchiveSha = sha(archiveBytesOf(currentManifest.id));
 
-const entryDiff = deepDiff(baselineEntries, currentEntries);
+const entryDiff = baseline ? deepDiff(baselineEntries, currentEntries) : null;
 const filesDiff = [];
-const fn = Math.min(baselineManifest.files.length, currentManifest.files.length);
-for (let i = 0; i < fn; i += 1) {
-	const a = baselineManifest.files[i];
-	const b = currentManifest.files[i];
-	if (a.rel !== b.rel || a.bytes !== b.bytes || a.sha !== b.sha) filesDiff.push(`${a.rel}#${a.bytes}/${a.sha.slice(0, 8)}!=${b.bytes}/${b.sha.slice(0, 8)}`);
+if (baseline) {
+	const fn = Math.min(baselineManifest.files.length, currentManifest.files.length);
+	for (let i = 0; i < fn; i += 1) {
+		const a = baselineManifest.files[i];
+		const b = currentManifest.files[i];
+		if (a.rel !== b.rel || a.bytes !== b.bytes || a.sha !== b.sha) filesDiff.push(`${a.rel}#${a.bytes}/${a.sha.slice(0, 8)}!=${b.bytes}/${b.sha.slice(0, 8)}`);
+	}
+	if (baselineManifest.files.length !== currentManifest.files.length) filesDiff.push(`count:${baselineManifest.files.length}!=${currentManifest.files.length}`);
 }
-if (baselineManifest.files.length !== currentManifest.files.length) filesDiff.push(`count:${baselineManifest.files.length}!=${currentManifest.files.length}`);
 
 const noteRel = { redacted: current.REDACTED_NOTE, external: current.EXTERNAL_SKILLS_NOTE, skipped: current.SKIPPED_NOTE };
 const byRel = (entries, rel) => entries.find((entry) => entry.rel === rel) ?? null;
@@ -159,14 +162,14 @@ for (const [key, rel] of Object.entries(noteRel)) {
 	const c = byRel(currentEntries, rel);
 	notes[key] = { inBaseline: b !== null, inCurrent: c !== null, equal: b !== null && c !== null && b.data.equals(c.data) };
 }
-const skippedEqual =
+const skippedEqual = baseline !== null &&
 	JSON.stringify(baselineManifest.skipped) === JSON.stringify(currentManifest.skipped) &&
 	JSON.stringify(baselineManifest.excluded) === JSON.stringify(currentManifest.excluded) &&
 	JSON.stringify(baselineManifest.redacted) === JSON.stringify(currentManifest.redacted);
 
 // ---- 2. 互通往返
 // 2a 基线 unpackTarGz 解当前版包
-const crossDiff = deepDiff(baselineEntries, baseline.unpackTarGz(fs.readFileSync(path.join(snapshotRoot(), currentManifest.id, "config.tar.gz"))));
+const crossDiff = baseline ? deepDiff(baselineEntries, baseline.unpackTarGz(fs.readFileSync(path.join(snapshotRoot(), currentManifest.id, "config.tar.gz")))) : null;
 // 2b 当前版 restoreSnapshot 恢复到空 HOME
 const expectRestore = currentEntries
 	.filter((entry) => entry.rel !== current.REDACTED_NOTE && entry.rel !== current.EXTERNAL_SKILLS_NOTE && entry.rel !== current.SKIPPED_NOTE)
@@ -284,14 +287,14 @@ process.stdout.write(
 			dshHome: dsh,
 			dshHomeVar: process.env.DSH_HOME ?? ""
 		},
-		baselineId: baselineManifest.id,
+		baselineId: baselineManifest?.id ?? null,
 		currentId: currentManifest.id,
 		equivalence: {
 			collectCount: currentEntries.length,
 			entryDiff,
 			filesDiff,
 			skippedEqual,
-			archiveBytes: { baseline: baselineManifest.archiveBytes, current: currentManifest.archiveBytes },
+			archiveBytes: { baseline: baselineManifest?.archiveBytes ?? null, current: currentManifest.archiveBytes },
 			archiveSha: { baseline: baselineArchiveSha, current: currentArchiveSha },
 			notes
 		},

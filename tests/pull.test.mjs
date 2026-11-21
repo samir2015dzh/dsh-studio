@@ -1,7 +1,8 @@
+import { historicalSource } from "./helpers/historical-source.mjs";
 // PULL-3 测试：伪 HOME 全矩阵。快照 → 恢复（真实产出 PENDING_PULLS.json）→ 一键拉取，
 // 四种结局各一条，断言逐条状态、lock 落盘、清单消项与保留规则、二次运行只重试未完成条目。
 // 实网小拉取由 DSH_STUDIO_LIVE=1 开启（默认跳过，常态跑测试不联网）。
-import { execFileSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -168,22 +169,25 @@ console.log("\n[10] N-12 流式打包");
 			s.env.userprofile === s.env.home && s.env.homeVar === s.env.home && s.env.dshHomeVar === s.env.dshHome,
 			`伪 HOME 三件套全部指向临时目录（USERPROFILE=${s.env.userprofile}）`
 		);
-		ok(e.entryDiff.length === 0, `基线版与新版解包后逐条 (rel, data) 全等（${e.collectCount} 条，差异 ${JSON.stringify(e.entryDiff.slice(0, 3))}）`);
-		ok(e.filesDiff.length === 0, `manifest.files 逐项全等（rel/bytes/sha，差异 ${JSON.stringify(e.filesDiff.slice(0, 3))}）`);
-		ok(e.skippedEqual === true, "skipped/excluded/redacted 三个口径与基线一致");
-		ok(
-			e.notes.redacted.equal && e.notes.external.equal && e.notes.skipped.equal,
-			`三份说明文件（脱敏/链接化/跳过）都在包内且逐字节相同：${JSON.stringify(e.notes)}`
-		);
-		// gzip 压缩结果在 Node 24 上偶发差 1 字节（CI 两次都是 1451 vs 基线），
-		// 解包内容与 manifest 已在上面逐条全等；这里只拦明显的体积回归。
-		// B5：gzip 由 9 级改 6 级（基线版仍是 9 级），压缩结果本来就会差几十字节；仍只拦明显的体积回归（> 5% 且 > 16 字节）
-		const archiveDelta = Math.abs(e.archiveBytes.baseline - e.archiveBytes.current);
-		ok(
-			archiveDelta <= Math.max(16, e.archiveBytes.baseline * 0.05),
-			`归档体积与基线接近（基线 ${e.archiveBytes.baseline}，当前 ${e.archiveBytes.current}，差 ${archiveDelta}；解包内容已逐条全等）`
-		);
-		ok(s.cross.crossDiff.length === 0, `新版包用基线 unpackTarGz 解完全等（差异 ${JSON.stringify(s.cross.crossDiff.slice(0, 3))}）`);
+		if (s.baselineId !== null) {
+			ok(e.entryDiff.length === 0, `基线版与新版解包后逐条 (rel, data) 全等（${e.collectCount} 条，差异 ${JSON.stringify(e.entryDiff.slice(0, 3))}）`);
+			ok(e.filesDiff.length === 0, `manifest.files 逐项全等（rel/bytes/sha，差异 ${JSON.stringify(e.filesDiff.slice(0, 3))}）`);
+			ok(e.skippedEqual === true, "skipped/excluded/redacted 三个口径与基线一致");
+			ok(
+				e.notes.redacted.equal && e.notes.external.equal && e.notes.skipped.equal,
+				`三份说明文件（脱敏/链接化/跳过）都在包内且逐字节相同：${JSON.stringify(e.notes)}`
+			);
+			// gzip 压缩结果在 Node 24 上偶发差 1 字节（CI 两次都是 1451 vs 基线），
+			// 解包内容与 manifest 已在上面逐条全等；这里只拦明显的体积回归。
+			// B5：gzip 由 9 级改 6 级（基线版仍是 9 级），压缩结果本来就会差几十字节；仍只拦明显的体积回归（> 5% 且 > 16 字节）
+			const archiveDelta = Math.abs(e.archiveBytes.baseline - e.archiveBytes.current);
+			ok(
+				archiveDelta <= Math.max(16, e.archiveBytes.baseline * 0.05),
+				`归档体积与基线接近（基线 ${e.archiveBytes.baseline}，当前 ${e.archiveBytes.current}，差 ${archiveDelta}；解包内容已逐条全等）`
+			);
+			ok(s.cross.crossDiff.length === 0, `新版包用基线 unpackTarGz 解完全等（差异 ${JSON.stringify(s.cross.crossDiff.slice(0, 3))}）`);
+		} else console.log("SKIP snapshot 历史内容对拍：af7daae 不可用；当前恢复与失败断言继续");
+		ok(e.notes.redacted.inCurrent && e.notes.external.inCurrent && e.notes.skipped.inCurrent, "当前包保留三份说明文件");
 		ok(
 			s.cross.restoreDiff.length === 0 && s.cross.restore.failed.length === 0,
 			`新版包走新版 restoreSnapshot 恢复到空 HOME 逐项一致（期望 ${s.cross.restore.expected} 项，写入 ${s.cross.restore.written}，失败 ${s.cross.restore.failed.length}）`
@@ -211,7 +215,8 @@ console.log("\n[10] N-12 流式打包");
 
 // ---- 11. N-12：峰值内存 —— 基线版 vs 流式版（独立子进程，伪 HOME，各 3 次取中位）
 console.log("\n[11] N-12 峰值内存");
-{
+const memoryBaseline = historicalSource("af7daae", "lib/snapshot.js");
+if (memoryBaseline !== null) {
 	const memHome = mkdtempSync(path.join(os.tmpdir(), "dsh-studio-mem-"));
 	const probe = path.join(here, "fixtures", "snapshot-mem-probe.mjs");
 	const memEnv = {
@@ -229,19 +234,11 @@ console.log("\n[11] N-12 峰值内存");
 	};
 	const buildBig = runProbe(["build", `--home=${memHome}`, "--mb=108", "--files=120"]);
 	// 基线版：整目录 cp 后覆盖 af7daae 的 snapshot.js（相对 import 才解析得开）
-	// 公开导出不含开发历史：基线对拍依赖历史提交 d99332c，缺失时整体跳过
-try {
-	execFileSync("git", ["cat-file", "-e", "d99332c^{commit}"], { cwd: path.join(here, ".."), stdio: "pipe" });
-} catch {
-	console.log("SKIP pull: 公开导出不含开发历史（基线提交 d99332c 不在），跳过基线对拍");
-	process.exit(0);
-}
-
-const baselineDir = path.join(memHome, "baseline-lib");
+	const baselineDir = path.join(memHome, "baseline-lib");
 	cpSync(path.join(here, "..", "lib"), baselineDir, { recursive: true, filter: (src) => !src.includes(".bak-mcp-") });
 	writeFileSync(
 		path.join(baselineDir, "snapshot.js"),
-		execFileSync("git", ["show", "af7daae:lib/snapshot.js"], { cwd: path.join(here, ".."), encoding: "utf8" }),
+		memoryBaseline,
 		"utf8"
 	);
 	const baselineLib = path.join(baselineDir, "snapshot.js");
@@ -273,7 +270,7 @@ const baselineDir = path.join(memHome, "baseline-lib");
 	// 机器无关：旧版绝对值只记录（不同 V8 / 平台 / RSS 口径差异大），判定交给上面的 1/3 比例
 	console.log(`  NOTE 基线版增量（仅记录）：${baseMed} KB；新版 ${curMed} KB；比值 ${(curMed / baseMed).toFixed(3)}`);
 	rmSync(memHome, { recursive: true, force: true });
-}
+} else console.log("SKIP 历史内存对拍：af7daae 不可用；保留此前的失败汇总");
 
 console.log(fails === 0 ? "\n=== ALL PASS" : `\n=== ${fails} FAILED`);
 process.exitCode = fails ? 1 : 0;
